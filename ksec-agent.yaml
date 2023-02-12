@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ksecaicloud
+  
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ksecdaemon-sa
+  namespace: ksecaicloud
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ksecdaemon
+  namespace: ksecaicloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ksecdaemon
+  template:
+    metadata:
+      labels:
+        app: ksecdaemon
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: ksecdaemon-sa
+      containers:
+        - name: ksecdaemon
+          image: sttor/ksecaiagent:latest
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1"
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+          env:
+            - name: HTTP_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ksecsecret
+                  key: HTTP_AUTH_TOKEN
+            - name: NAMESPACE
+              value: "ksecaicloud"
+            - name: BASE_URL
+              value: "http://test2:9000"
+            - name: SECRET_NAME
+              value: "ksecsecret"
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ksec-role
+  namespace: ksecaicloud
+rules:
+- apiGroups: ["*"]
+  resources: ["jobs", "cronjobs", "daemonsets"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ksec-rolebinding
+  namespace: ksecaicloud
+subjects:
+- kind: ServiceAccount
+  name: ksecdaemon-sa
+  namespace: ksecaicloud
+roleRef:
+  kind: Role
+  name: ksec-role
+  apiGroup: rbac.authorization.k8s.io
